@@ -1,0 +1,199 @@
+/// ==UserScript==
+// @name        removepagelimitation
+// @namespace   https://github.com/rakazzt
+// @match       *://*/*
+// @run-at      document-start
+// @grant       none
+// @version     1
+// @author      rakazzt
+// @description Pass to kill most of the site, you can lift the restrictions prohibited to copy, cut, select the text, right-click menu.
+
+// ==/UserScript==
+(function () {
+  'use strict';
+
+  // Domain-specific rules and configurations
+  const rules = {
+    black_rule: {
+      name: 'black',
+      hook_eventNames: '',
+      unhook_eventNames: '',
+    },
+    default_rule: {
+      name: 'default',
+      hook_eventNames: 'contextmenu|select|selectstart|copy|cut|dragstart',
+      unhook_eventNames: 'mousedown|mouseup|keydown|keyup',
+      dom0: true,
+      hook_addEventListener: true,
+      hook_preventDefault: true,
+      hook_set_returnValue: true,
+      add_css: true,
+    },
+  };
+
+  // List of blacklisted domains
+  const blackList = [
+    /.*\.youtube\.com.*/,
+    /.*\.wikipedia\.org.*/,
+    /mail\.qq\.com.*/,
+    /translate\.google\..*/,
+  ];
+
+  // Get a random storage name
+  const storageName = generateRandomString();
+
+  // Event handlers
+  const originalAddEventListener = EventTarget.prototype.addEventListener;
+  const originalDocumentAddEventListener = document.addEventListener;
+  const originalPreventDefault = Event.prototype.preventDefault;
+
+  // Hooked addEventListener function
+  function hookedAddEventListener(type, func, useCapture) {
+    const realAddEventListener = this === document ? originalDocumentAddEventListener : originalAddEventListener;
+    if (hook_eventNames.includes(type)) {
+      realAddEventListener.call(this, type, returnTrue, useCapture);
+    } else if (unhook_eventNames.includes(type)) {
+      const funcName = storageName + type + (useCapture ? 't' : 'f');
+      if (!this[funcName]) {
+        this[funcName] = [];
+        realAddEventListener.call(this, type, useCapture ? unhook_t : unhook_f, useCapture);
+      }
+      this[funcName].push(func);
+    } else {
+      realAddEventListener.call(this, type, func, useCapture);
+    }
+  }
+
+  // Clean up DOM0 event handlers
+  function clearDOM0Handlers() {
+    const elements = getElements();
+    elements.forEach((element) => {
+      eventNames.forEach((eventName) => {
+        const propName = 'on' + eventName;
+        if (element[propName] !== null && element[propName] !== onxxx) {
+          if (unhook_eventNames.includes(eventName)) {
+            element[storageName + propName] = element[propName];
+            element[propName] = onxxx;
+          } else {
+            element[propName] = null;
+          }
+        }
+      });
+    });
+  }
+
+  // Return true for an event
+  function returnTrue(e) {
+    return true;
+  }
+
+  // Handle unhook_t event
+  function unhook_t(e) {
+    return unhook(e, this, storageName + e.type + 't');
+  }
+
+  // Handle unhook_f event
+  function unhook_f(e) {
+    return unhook(e, this, storageName + e.type + 'f');
+  }
+
+  // Handle unhook event
+  function unhook(e, self, funcName) {
+    const list = self[funcName];
+    list.forEach((func) => func(e));
+    e.returnValue = true;
+    return true;
+  }
+
+  // Handle onxxx event
+  function onxxx(e) {
+    const propName = storageName + 'on' + e.type;
+    this[propName](e);
+    e.returnValue = true;
+    return true;
+  }
+
+  // Generate a random string
+  function generateRandomString() {
+    const characters = 'qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM';
+    const length = parseInt(Math.random() * 12 + 8);
+    let result = '';
+    while (length--) {
+      result += characters[Math.floor(Math.random() * characters.length)];
+    }
+    return result;
+  }
+
+  // Get all elements, including the document
+  function getElements() {
+    const elements = Array.from(document.getElementsByTagName('*'));
+    elements.push(document);
+    return elements;
+  }
+
+  // Add custom CSS
+  function addCustomCSS(css) {
+    if (css) {
+      const style = document.createElement('style');
+      style.innerHTML = css;
+      document.head.appendChild(style);
+    }
+  }
+
+  // Determine the rule for the current domain
+  function getRule(url) {
+    for (const rule of rules) {
+      if (blackList.some((domain) => domain.test(url))) {
+        return rule;
+      }
+    }
+    return rules.default_rule;
+  }
+
+  // Initialize the code
+  function init() {
+    const url = window.location.host + window.location.pathname;
+    const rule = getRule(url);
+
+    const hook_eventNames = rule.hook_eventNames.split('|');
+    const unhook_eventNames = rule.unhook_eventNames.split('|');
+    const eventNames = hook_eventNames.concat(unhook_eventNames);
+
+    if (rule.dom0) {
+      setInterval(clearDOM0Handlers, 30 * 1000);
+      setTimeout(clearDOM0Handlers, 2500);
+      window.addEventListener('load', clearDOM0Handlers, true);
+      clearDOM0Handlers();
+    }
+
+    if (rule.hook_addEventListener) {
+      EventTarget.prototype.addEventListener = hookedAddEventListener;
+      document.addEventListener = hookedAddEventListener;
+    }
+
+    if (rule.hook_preventDefault) {
+      Event.prototype.preventDefault = function () {
+        if (!eventNames.includes(this.type)) {
+          originalPreventDefault.call(this);
+        }
+      };
+    }
+
+    if (rule.hook_set_returnValue) {
+      Object.defineProperty(Event.prototype, 'returnValue', {
+        set: function (value) {
+          if (this.returnValue !== true && eventNames.includes(this.type)) {
+            this.returnValue = true;
+          }
+        },
+      });
+    }
+
+    addCustomCSS('html, * {-webkit-user-select: text !important; -moz-user-select: text !important;}');
+
+    console.debug('url: ' + url, 'storageName：' + storageName, 'rule: ' + rule.name);
+  }
+
+  init();
+})();
+```
